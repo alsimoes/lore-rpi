@@ -1,45 +1,45 @@
-# Compilando o `lore-server` para aarch64 (Raspberry Pi 4)
+# Building `lore-server` for aarch64 (Raspberry Pi 4)
 
-Guia de referência para cross-compilar o binário `loreserver` deste fork
-(`lore-rpi`) para um Raspberry Pi 4, a cada sync com o upstream
-(`EpicGames/lore`). Escrito para ser seguido tanto por uma pessoa quanto por
-um agente de IA. Complementa [lore-aarch64-build.md](lore-aarch64-build.md),
-que cobre o ambiente de build e a CLI `lore`.
+Reference guide for cross-compiling this fork's (`lore-rpi`) `loreserver`
+binary for a Raspberry Pi 4, on every sync with upstream (`EpicGames/lore`).
+Written to be followed by a person or an AI agent alike. Complements
+[lore-aarch64-build.md](lore-aarch64-build.md), which covers the build
+environment and the `lore` CLI.
 
-> **Resumo em uma frase:** o `loreserver` compila para
-> `aarch64-unknown-linux-musl` via `cargo-zigbuild`, sem nenhum `RUSTFLAGS`
-> manual — só é preciso a feature `zerocopy` no `uuid` de
-> `lore-server/Cargo.toml`, já aplicada neste fork.
+> **One-sentence summary:** `loreserver` builds for
+> `aarch64-unknown-linux-musl` via `cargo-zigbuild`, with no manual
+> `RUSTFLAGS` — the only thing needed is the `zerocopy` feature on `uuid` in
+> `lore-server/Cargo.toml`, already applied in this fork.
 
 ---
 
-## 1. Ambiente
+## 1. Environment
 
-### Alvo (target)
-| Item | Valor |
+### Target
+| Item | Value |
 |------|-------|
 | Hardware | Raspberry Pi 4 (Argon EON NAS) |
-| CPU | ARM Cortex-A72 (ARMv8-A, **sem** SVE) |
-| Arquitetura | ARM64 / aarch64 |
-| SO | Debian 11 (Bullseye) |
+| CPU | ARM Cortex-A72 (ARMv8-A, **no** SVE) |
+| Architecture | ARM64 / aarch64 |
+| OS | Debian 11 (Bullseye) |
 | glibc | 2.31 |
 
-> **Por que `musl` e não `gnu`?** O alvo roda glibc 2.31. Linkar com
-> `aarch64-unknown-linux-gnu` no host amarraria o binário à glibc do host
-> (mais nova), causando erros `GLIBC_2.3x not found` no Pi. Usar
-> `aarch64-unknown-linux-musl` produz um binário estático/independente da
-> glibc, que roda em qualquer userland aarch64. É a escolha mais robusta para
-> um NAS com SO antigo.
+> **Why `musl` and not `gnu`?** The target runs glibc 2.31. Linking with
+> `aarch64-unknown-linux-gnu` on the host would tie the binary to the host's
+> (newer) glibc, causing `GLIBC_2.3x not found` errors on the Pi. Using
+> `aarch64-unknown-linux-musl` produces a static binary independent of glibc,
+> which runs on any aarch64 userland. It's the more robust choice for a NAS
+> with an old OS.
 
-### Host de build
-| Ferramenta | Observação |
-|------------|------------|
-| SO do host | WSL2 + Arch Linux (qualquer Linux x86_64 serve) |
-| `cargo-zigbuild` | wrapper que usa o `zig` como linker cross |
-| `zig` | fornece o toolchain C/cross-linking |
+### Build host
+| Tool | Note |
+|------|------|
+| Host OS | WSL2 + Arch Linux (any Linux x86_64 works) |
+| `cargo-zigbuild` | wrapper that uses `zig` as the cross linker |
+| `zig` | provides the C toolchain/cross-linking |
 | Rust target | `aarch64-unknown-linux-musl` (`rustup target add aarch64-unknown-linux-musl`) |
 
-Checagem rápida do host antes de compilar:
+Quick host check before building:
 
 ```bash
 rustc --version
@@ -50,135 +50,146 @@ rustup target list --installed | grep aarch64-unknown-linux-musl
 
 ---
 
-## 2. Comando de build (a fonte da verdade)
+## 2. Build command (the source of truth)
 
 ```bash
 cd /mnt/c/dev/repos/lore-rpi
 cargo zigbuild --release --target aarch64-unknown-linux-musl --bin loreserver
 ```
 
-O binário sai em:
+The binary lands at:
 
 ```
 target/aarch64-unknown-linux-musl/release/loreserver
 ```
 
-⚠️ Nenhum `RUSTFLAGS` é necessário. Os `--cfg tokio_unstable` e `--cfg
-uuid_unstable` que o `loreserver` exige já estão versionados em
-`.cargo/config.toml` (seção `[build]`), que se aplica automaticamente a
-qualquer target — como `aarch64-unknown-linux-musl` — que não tenha sua
-própria tabela `[target.*]` nesse arquivo. Isso é diferente do estado da
-v0.8.3, quando esses cfgs precisavam ser passados manualmente (ver histórico
-deste doc no git se quiser os detalhes de por que).
+⚠️ No `RUSTFLAGS` needed. The `--cfg tokio_unstable` and `--cfg
+uuid_unstable` that `loreserver` requires are already checked into
+`.cargo/config.toml` (the `[build]` section), which applies automatically to
+any target — like `aarch64-unknown-linux-musl` — that doesn't have its own
+`[target.*]` table in that file. This differs from the v0.8.3 state, when
+these cfgs had to be passed manually (see this doc's git history if you want
+the details of why).
 
 ---
 
-## 3. O único ajuste que ainda é necessário
+## 3. The one fix that's still needed
 
-### Feature `zerocopy` do `uuid` em `lore-server/Cargo.toml`
+### `zerocopy` feature on `uuid` in `lore-server/Cargo.toml`
 
-| Campo | Detalhe |
-|-------|---------|
-| Arquivo | `lore-server/Cargo.toml` |
+| Field | Detail |
+|-------|--------|
+| File | `lore-server/Cargo.toml` |
 | Original (upstream) | `uuid = { workspace = true }` |
-| Corrigido (neste fork) | `uuid = { workspace = true, features = ["zerocopy"] }` |
-| Tipo | Edição de Cargo.toml |
-| Status | **Já aplicado** neste fork |
+| Fixed (in this fork) | `uuid = { workspace = true, features = ["zerocopy"] }` |
+| Type | Cargo.toml edit |
+| Status | **Already applied** in this fork |
 
-**Causa-raiz:** `ReplicationHeader`
-(`lore-server/src/protocol/replication_store/header.rs`) deriva traits do
-zerocopy sobre um campo `Uuid`. Isso exige que a crate `uuid` tenha a feature
-`zerocopy` ligada. As crates `lore-base`, `lore-revision` e `lore-storage` já
-fazem isso; só o `lore-server` estava com a inconsistência.
+**Root cause:** `ReplicationHeader`
+(`lore-server/src/protocol/replication_store/header.rs`) derives zerocopy
+traits on a `Uuid` field. That requires the `uuid` crate to have its
+`zerocopy` feature enabled. The `lore-base`, `lore-revision`, and
+`lore-storage` crates already do this; only `lore-server` had the
+inconsistency.
 
-**Por que o cfg sozinho (`uuid_unstable`) não bastava:** ligar a *feature*
-`zerocopy` só puxa a *dependência*. Os `impl IntoBytes/FromBytes/Immutable for
-Uuid` no crate `uuid` ficam atrás de **dois** condicionais em conjunto —
-`all(uuid_unstable, feature = "zerocopy")`. O `--cfg uuid_unstable` já vinha
-resolvido no `.cargo/config.toml` do workspace; faltava exatamente a feature
-no `Cargo.toml` do `lore-server`. Ver
+**Why the cfg alone (`uuid_unstable`) wasn't enough:** enabling the
+`zerocopy` *feature* only pulls in the *dependency*. The `impl
+IntoBytes/FromBytes/Immutable for Uuid` in the `uuid` crate sit behind
+**two** conditions together — `all(uuid_unstable, feature = "zerocopy")`.
+`--cfg uuid_unstable` was already resolved in the workspace's
+`.cargo/config.toml`; exactly the feature was missing in `lore-server`'s
+`Cargo.toml`. See
 [uuid-rs/uuid#588](https://github.com/uuid-rs/uuid/issues/588).
 
-**Status upstream:** ainda é uma inconsistência real do `EpicGames/lore`
-(as outras três crates do workspace já fazem certo) — candidato a PR.
+**Upstream status:** still a real inconsistency in `EpicGames/lore` (the
+other three workspace crates already get it right) — a PR candidate.
 
-### Reconfirmar depois de um sync com upstream
+### Re-check after an upstream sync
 
 ```bash
 grep -n '^uuid' lore-server/Cargo.toml
-# compare com as crates que já acertam:
+# compare against the crates that already get it right:
 grep -n '^uuid' lore-base/Cargo.toml lore-revision/Cargo.toml lore-storage/Cargo.toml
 ```
 
-Se o `lore-server` já vier com `features = ["zerocopy"]` (por exemplo, porque
-o upstream aceitou o PR, ou porque o merge trouxe o patch deste fork sem
-conflito), não faça nada.
+If `lore-server` already has `features = ["zerocopy"]` (for example, because
+upstream accepted the PR, or because the merge brought in this fork's patch
+with no conflict), do nothing.
 
 ---
 
-## 4. Ajustes que ficaram obsoletos (histórico — não reaplicar)
+## 4. Fixes that are now obsolete (history — do not reapply)
 
-Estes dois existiam quando este runbook foi escrito contra a v0.8.3. Entre a
-v0.8.3 e a v0.10.0 o upstream corrigiu ambos. Documentados aqui só para você
-não os reintroduzir achando que "sempre foi assim":
+These two existed when this runbook was written against v0.8.3. Between
+v0.8.3 and v0.10.0 upstream fixed both. Documented here only so you don't
+reintroduce them thinking "it was always like this":
 
-- **`-mcpu=neoverse-512tvb` hardcoded em `lore-base/build.rs`:** virou
-  opt-in, atrás da feature `neoverse-512tvb` do `lore-base`. Um build normal
-  para aarch64 não recebe mais esse `-mcpu`, então não quebra em CPUs
-  sem SVE-512 como o Cortex-A72 — sem precisar de nenhum patch.
-- **`--cfg tokio_unstable` / `--cfg uuid_unstable` via `RUSTFLAGS` manual:**
-  os dois já estão versionados no `[build].rustflags` de
-  `.cargo/config.toml` do repositório.
+- **Hardcoded `-mcpu=neoverse-512tvb` in `lore-base/build.rs`:** became
+  opt-in, behind `lore-base`'s `neoverse-512tvb` feature. A normal aarch64
+  build no longer receives this `-mcpu`, so it doesn't break on CPUs without
+  SVE-512 like the Cortex-A72 — no patch needed.
+- **`--cfg tokio_unstable` / `--cfg uuid_unstable` via manual `RUSTFLAGS`:**
+  both are now checked into the repository's `.cargo/config.toml`
+  `[build].rustflags`.
 
-Se depois de um sync futuro o build voltar a falhar com `unknown CPU` ou com
-`unresolved import` gated por `cfg(tokio_unstable)`/`cfg(uuid_unstable)`,
-é sinal de que o upstream reestruturou esse mecanismo de novo — trate como um
-problema novo, não reaplique os patches antigos às cegas.
+If after a future sync the build fails again with `unknown CPU` or with an
+`unresolved import` gated by `cfg(tokio_unstable)`/`cfg(uuid_unstable)`,
+that's a sign upstream restructured this mechanism again — treat it as a new
+problem, don't blindly reapply the old patches.
 
 ---
 
-## 5. Verificação no destino (Pi 4)
+## 5. Verification on the target (Pi 4)
 
-Após copiar o binário para o Pi:
+After copying the binary to the Pi:
 
 ```bash
 file ./loreserver
-# Esperado: ELF 64-bit LSB ... ARM aarch64 ...  (estático, se musl)
+# Expected: ELF 64-bit LSB ... ARM aarch64 ...  (static, if musl)
 
-./loreserver --version    # ou --help
+./loreserver --version    # or --help
 ```
 
-Smoke-test mínimo recomendado: subir o serviço com uma config local
-(`config/local.toml`) e confirmar que ele inicia e responde ao health check
-antes de promover a produção.
+Recommended minimal smoke test: bring the service up with a local config
+(`config/local.toml`) and confirm it starts and answers the health check
+before promoting to production.
 
 ---
 
-## 6. Invariantes e armadilhas
+## 6. Invariants and pitfalls
 
-- **Formato on-the-wire (CRÍTICO).** O `ReplicationHeader` faz parte do
-  protocolo de replicação; seu layout de bytes **não pode mudar**. A
-  abordagem escolhida (ligar `uuid_unstable`/feature `zerocopy` e usar o impl
-  real do `uuid`) preserva o layout byte-a-byte e é idêntica ao build do
-  upstream. **Evite** trocar `Uuid` por `[u8; 16]` no header como contorno —
-  funciona, mas exige editar todas as bordas que chamam
-  `.as_hyphenated()`/`.to_string()`/`Uuid::new_v4()` nos serviços de
-  replicação e testes, e introduz risco de divergência de formato. Só
-  considere isso se o `uuid_unstable` for removido upstream sem substituto.
-- **`cargo-zigbuild` é necessário** (não `cargo build` puro) para o
-  cross-linking com musl via `zig`.
-- Se quiser tunar especificamente para o Cortex-A72 (em vez do baseline
-  portável que o upstream usa por padrão para `aarch64-unknown-linux-gnu`),
-  ver a nota sobre o `-mcpu` em
-  [lore-aarch64-build.md § 6.2](lore-aarch64-build.md#62--tuning-opcional-de-cpu-para-o-cortex-a72)
-  — o valor certo depende do C toolchain (`zig cc` via zigbuild exige sintaxe
-  diferente de um `gcc` real) e precisa ser validado empiricamente antes de
-  fixar.
+- **On-the-wire format (CRITICAL).** `ReplicationHeader` is part of the
+  replication protocol; its byte layout **must not change**. The chosen
+  approach (enabling `uuid_unstable`/the `zerocopy` feature and using
+  `uuid`'s real impl) preserves the byte-for-byte layout and is identical to
+  upstream's build. **Avoid** swapping `Uuid` for `[u8; 16]` in the header as
+  a workaround — it works, but requires editing every call site of
+  `.as_hyphenated()`/`.to_string()`/`Uuid::new_v4()` in the replication
+  services and tests, and introduces a risk of format divergence. Only
+  consider it if `uuid_unstable` is removed upstream with no replacement.
+- **`cargo-zigbuild` is required** (not plain `cargo build`) for musl
+  cross-linking via `zig`.
+- If you want to tune specifically for the Cortex-A72 (instead of the
+  portable baseline upstream uses by default for
+  `aarch64-unknown-linux-gnu`), see the note about `-mcpu` in
+  [lore-aarch64-build.md § 6.2](lore-aarch64-build.md#62--optional-cpu-tuning-for-the-cortex-a72)
+  — the right value depends on the C toolchain (`zig cc` via zigbuild
+  requires different syntax from a real `gcc`) and needs to be validated
+  empirically before settling on one.
 
 ---
 
-## 7. Itens candidatos a PR upstream
+## 7. Candidates for an upstream PR
 
-1. `lore-server/Cargo.toml`: falta `features = ["zerocopy"]` no `uuid`
-   (inconsistente com `lore-base`, `lore-revision` e `lore-storage`, que já
-   fazem isso).
+1. `lore-server/Cargo.toml`: missing `features = ["zerocopy"]` on `uuid`
+   (inconsistent with `lore-base`, `lore-revision`, and `lore-storage`,
+   which already do this).
+
+---
+
+## 8. Automated build and distribution
+
+This document covers the manual build (WSL + `cargo zigbuild` directly). For
+the same build running in CI (GitHub Actions) on every release, and for
+installing or updating an already-published `loreserver` on a Pi, see
+[lore-rpi-release.md](lore-rpi-release.md).

@@ -34,6 +34,7 @@
 
 - [About Lore](#about-lore)
 - [Get started with Lore](#get-started-with-lore)
+- [Raspberry Pi (this fork)](#raspberry-pi-this-fork)
 - [Overview](#overview)
 - [Lore's architecture](#lores-architecture)
 - [Lore's repositories](#lores-repositories)
@@ -74,6 +75,33 @@ curl -fsSL https://raw.githubusercontent.com/EpicGames/lore/main/scripts/install
 ```powershell
 $env:LORE_DEMO=1; irm https://raw.githubusercontent.com/EpicGames/lore/main/scripts/install.ps1 | iex
 ```
+
+<sub><a href="#readme-top">(back to top)</a></sub>
+
+## Raspberry Pi (this fork)
+
+`lore-rpi` is a fork of [EpicGames/lore](https://github.com/EpicGames/lore) that adds support for running Lore on a Raspberry Pi 4 (or any `aarch64` Linux device with an old glibc, such as the Argon EON NAS). Upstream doesn't publish a generic ARM64 binary, and the target's Debian 11 glibc is too old for a binary linked against a typical build host — so this fork cross-compiles both `lore` (the CLI) and `loreserver` statically against musl (`aarch64-unknown-linux-musl`) and publishes them as [GitHub Releases](https://github.com/alsimoes/lore-rpi/releases) on this repository.
+
+Install or update the client, the server, or both — run this on the Pi itself:
+
+```bash
+# Both the lore CLI and loreserver:
+curl -fsSL https://raw.githubusercontent.com/alsimoes/lore-rpi/main/scripts/install-rpi.sh | bash
+
+# Client only:
+curl -fsSL https://raw.githubusercontent.com/alsimoes/lore-rpi/main/scripts/install-rpi.sh | bash -s -- --client-only
+
+# Server only:
+curl -fsSL https://raw.githubusercontent.com/alsimoes/lore-rpi/main/scripts/install-rpi.sh | bash -s -- --server-only
+```
+
+Re-running the same command later updates whichever binaries are already installed. Binaries install to `~/bin` by default; see `install-rpi.sh --help` for all options (a specific release version, a different install directory, etc.).
+
+For how the cross-compilation and release process works, and for the upstream incompatibilities this fork patches around, see the runbooks in [`aarch64-docs/`](aarch64-docs/):
+
+- [`lore-aarch64-build.md`](aarch64-docs/lore-aarch64-build.md) — building the `lore` CLI for ARM64.
+- [`lore-server-aarch64-build.md`](aarch64-docs/lore-server-aarch64-build.md) — building `loreserver` for ARM64.
+- [`lore-rpi-release.md`](aarch64-docs/lore-rpi-release.md) — the release workflow and the install/update script.
 
 <sub><a href="#readme-top">(back to top)</a></sub>
 

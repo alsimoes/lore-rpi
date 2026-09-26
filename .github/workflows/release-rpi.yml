@@ -1,0 +1,109 @@
+# SPDX-FileCopyrightText: 2026 Epic Games, Inc.
+# SPDX-License-Identifier: MIT
+
+name: Release Raspberry Pi binaries
+
+# Fork-specific: cross-builds `lore` and `loreserver` for
+# aarch64-unknown-linux-musl (Raspberry Pi 4 / Argon EON, Debian 11 / glibc
+# 2.31 — see aarch64-docs/) and publishes them as a GitHub Release on this
+# fork. Nothing here touches upstream (EpicGames/lore); it only runs against
+# origin (alsimoes/lore-rpi).
+on:
+  push:
+    tags:
+      - "v*-rpi.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: >-
+          Existing tag to (re)build and release, e.g. v0.10.0-rpi.1. Required:
+          with no tag-push event there is nothing to infer it from.
+        type: string
+        required: true
+
+permissions: {}
+
+concurrency:
+  group: release-rpi-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  TARGET: aarch64-unknown-linux-musl
+  ZIG_VERSION: "0.16.0"
+  ZIG_SHA256: 70e49664a74374b48b51e6f3fdfbf437f6395d42509050588bd49abe52ba3d00
+  CARGO_ZIGBUILD_VERSION: "0.23.4"
+
+jobs:
+  build:
+    name: cross-build and release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the Release and upload its assets
+    steps:
+      - name: Resolve and validate the tag to build
+        id: tag
+        env:
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          if ! printf '%s' "${TAG}" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+-rpi\.[0-9]+$'; then
+            echo "::error::'${TAG}' is not a fork release tag of the form vX.Y.Z-rpi.N"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.tag.outputs.tag }}
+          persist-credentials: false
+
+      - name: Install the aarch64-musl Rust target
+        run: rustup target add "${TARGET}"
+
+      - name: Install zig (cargo-zigbuild's cross linker)
+        run: |
+          set -euo pipefail
+          curl -fsSL "https://ziglang.org/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz" -o zig.tar.xz
+          echo "${ZIG_SHA256}  zig.tar.xz" | sha256sum -c -
+          mkdir -p "${HOME}/zig"
+          tar -xJf zig.tar.xz -C "${HOME}/zig" --strip-components=1
+          echo "${HOME}/zig" >> "$GITHUB_PATH"
+
+      - name: Install cargo-zigbuild
+        run: cargo install cargo-zigbuild --version "${CARGO_ZIGBUILD_VERSION}" --locked
+
+      # Same command as aarch64-docs/lore-server-aarch64-build.md §2, plus
+      # --bin lore in the same invocation. No manual RUSTFLAGS: the
+      # tokio_unstable/uuid_unstable cfgs already live in .cargo/config.toml.
+      - name: Cross-build lore and loreserver
+        run: cargo zigbuild --release --target "${TARGET}" --bin lore --bin loreserver
+
+      - name: Verify the binaries (aarch64, statically linked)
+        run: |
+          set -euo pipefail
+          for bin in lore loreserver; do
+            file "target/${TARGET}/release/${bin}"
+          done
+
+      - name: Package release tarballs
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.tag.outputs.tag }}"
+          for bin in lore loreserver; do
+            asset="${bin}-${TAG}-${TARGET}.tar.gz"
+            tar -czf "${asset}" -C "target/${TARGET}/release" "${bin}"
+            echo "${asset} sha256=$(sha256sum "${asset}" | cut -d' ' -f1)"
+          done
+
+      # Create on first run, or re-upload (e.g. a dispatch retry) on later ones.
+      - name: Create or update the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" ./*.tar.gz --clobber
+          else
+            gh release create "${TAG}" ./*.tar.gz --title "${TAG}" --generate-notes
+          fi
