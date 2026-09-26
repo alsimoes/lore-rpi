@@ -70,7 +70,7 @@ lore-macro = { workspace = true }
 lore-notification = { workspace = true }
 lore-proto = { workspace = true }
 lore-telemetry = { workspace = true }
-uuid = { workspace = true }
+uuid = { workspace = true, features = ["zerocopy"] }
 x509-parser = { workspace = true }
 zerocopy = { workspace = true }
 
